@@ -7,7 +7,7 @@ import router from '../router'
  */
 const api = axios.create({
   // 백엔드 주소 (Vite Proxy 사용 시 '' 또는 환경변수 처리 권장, 현재는 하드코딩 유지)
-  baseURL: 'http://localhost:8080',
+  baseURL: '',
   // 🔹 [유지] 타임아웃 3분 (AI 분석 등 긴 작업 대비)
   timeout: 180000, 
 })

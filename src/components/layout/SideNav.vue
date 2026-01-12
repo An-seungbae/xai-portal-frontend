@@ -19,7 +19,7 @@
       <div class="nav-group-title">AI 서비스</div>
       <router-link to="/ai/predict" class="nav-item" active-class="active">
         <span class="icon">🔮</span>
-        <span class="label">AI 장애 예지</span>
+        <span class="label">AI 장애 예측</span>
       </router-link>
 
       <router-link to="/ai/code-review" class="nav-item" active-class="active">
@@ -63,27 +63,14 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter, useRoute } from "vue-router";
-// [수정됨] useAuthStore 대신 authStore를 가져오고, 상대 경로를 사용하여 경로 문제를 해결했습니다.
+import { useRouter } from "vue-router";
 import { authStore } from "../../store/auth";
 
 const router = useRouter();
-const route = useRoute();
 
-function go(path: string) {
-  router.push(path);
-}
-
-function isActive(path: string) {
-  // 정확한 경로 매칭 또는 하위 경로 포함 여부 확인
-  if (path === "/") {
-    return route.path === "/";
-  }
-  return route.path.startsWith(path);
-}
+// [수정] 사용하지 않는 go, isActive 함수 제거 (빌드 에러 원인)
 
 function logout() {
-  // authStore 객체의 메서드를 직접 호출합니다.
   authStore.clearToken();
   router.push("/login");
 }
@@ -208,5 +195,27 @@ function logout() {
 .role {
   font-size: 12px;
   color: #94a3b8;
+}
+
+.nav-footer {
+  padding: 10px 20px 20px;
+  background: #0f172a;
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 10px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.logout-btn:hover {
+  background: #dc2626;
 }
 </style>

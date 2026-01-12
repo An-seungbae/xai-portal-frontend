@@ -3,15 +3,18 @@
     <div class="content-wrapper">
       <header class="page-header">
         <div class="header-left">
-          <h1>🚨 오류 정밀 분석 리포트</h1>
-          <p class="subtitle">AI가 진단한 오류 원인과 해결책을 확인하세요.</p>
+          <button @click="goBack" class="back-btn">← 뒤로가기</button>
+          <div class="title-group">
+            <h1>🚨 오류 정밀 분석 리포트</h1>
+            <p class="subtitle">AI가 진단한 오류 원인과 해결책을 확인하세요.</p>
+          </div>
         </div>
         <div class="header-right">
           <div class="lang-selector">
             <span class="lang-label">분석 언어</span>
             <select
               v-model="language"
-              @change="runAiAnalysis"
+              @change="triggerReAnalysis"
               class="modern-select"
             >
               <option value="KO">🇰🇷 한글</option>
@@ -73,9 +76,9 @@
 
             <div class="error-box">
               <div class="error-header">
-                <span class="error-code"
-                  >Code: {{ detail.error?.code || "N/A" }}</span
-                >
+                <span class="error-code">
+                  Code: {{ detail.error?.code || "N/A" }}
+                </span>
               </div>
               <div class="error-msg">
                 {{ detail.error?.message || "메시지 없음" }}
@@ -89,20 +92,34 @@
 
         <section class="card ai-card">
           <div class="card-header ai-header">
-            <h2>🤖 AI Charles Analysis</h2>
-            <div class="ai-badge">Powered by GPT-4o</div>
+            <div class="ai-title">
+              <h2>🤖 AI Charles Analysis</h2>
+              <div class="ai-badge">GPT-4o</div>
+            </div>
+            <button
+              v-if="!aiLoading && detail"
+              @click="triggerReAnalysis"
+              class="retry-btn"
+            >
+              🔄 재분석
+            </button>
           </div>
 
           <div v-if="aiLoading" class="loading-state ai-loading">
             <div class="ai-spinner"></div>
-            <p>AI가 로그를 분석하고 있습니다...</p>
+            <p>AI가 로그를 정밀 분석하고 있습니다...</p>
           </div>
-          <div v-else-if="aiError" class="error-state">⚠️ {{ aiError }}</div>
+          <div v-else-if="aiError" class="error-state">
+            ⚠️ {{ aiError }}
+            <button @click="triggerReAnalysis" class="retry-link">
+              다시 시도
+            </button>
+          </div>
 
           <div v-else-if="analysis" class="ai-result">
             <div class="ai-section summary-section">
               <h3>📝 핵심 요약</h3>
-              <p>{{ analysis.summary }}</p>
+              <p class="result-text">{{ analysis.summary }}</p>
             </div>
 
             <div class="ai-split">
@@ -142,11 +159,11 @@
 
 <script lang="ts">
 import { defineComponent, ref, onMounted, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../api/axios";
 
-// 타입 정의 유지
 interface A360ExecutionDetail {
+  id?: string;
   deviceName?: string;
   automationName?: string;
   currentBotName?: string;
@@ -161,7 +178,6 @@ interface A360ExecutionDetail {
     correctiveAction?: string;
     code?: string;
   };
-  id?: string;
 }
 
 interface AiAnalysisResult {
@@ -175,6 +191,7 @@ export default defineComponent({
   name: "ErrorAiAnalysis",
   setup() {
     const route = useRoute();
+    const router = useRouter(); // router 사용을 위해 선언
     const activityId = ref(route.query.activityId as string);
     const language = ref<"KO" | "EN" | "BOTH">("KO");
 
@@ -186,56 +203,65 @@ export default defineComponent({
     const aiError = ref("");
     const analysis = ref<AiAnalysisResult | null>(null);
 
-    // 상태에 따른 CSS 클래스
+    // 뒤로가기 함수 구현 (router 사용)
+    const goBack = () => {
+      router.back();
+    };
+
     const getStatusClass = (status?: string) => {
       if (!status) return "gray";
-      if (status === "COMPLETED") return "green";
-      if (status === "FAILED") return "red";
+      const s = status.toUpperCase();
+      if (s === "COMPLETED") return "green";
+      if (["FAILED", "RUN_FAILED", "ABORTED", "TIMED_OUT"].includes(s))
+        return "red";
       return "blue";
     };
 
-    /** A360 상세 조회 */
     const loadExecutionDetail = async () => {
       if (!activityId.value) {
-        detailError.value = "activityId가 없습니다.";
+        detailError.value = "Activity ID가 전달되지 않았습니다.";
         return;
       }
       detailLoading.value = true;
       detailError.value = "";
+
       try {
         const res = await api.get(`/api/errors/execution/${activityId.value}`);
         detail.value = res.data;
       } catch (err: any) {
+        console.error("Detail Load Error:", err);
         detailError.value =
-          err?.response?.data?.message ||
-          "A360 상세 정보를 불러오지 못했습니다.";
+          err?.response?.data?.message || "상세 정보를 불러오지 못했습니다.";
       } finally {
         detailLoading.value = false;
       }
     };
 
-    /** AI 분석용 텍스트 생성 */
+    // AI 분석용 텍스트 조립
     const buildAiInputText = (d: A360ExecutionDetail) => {
+      // 메시지가 너무 길 경우 잘라서 전송 (토큰 제한 방지)
+      let rawMsg = d.message || "";
+      if (rawMsg.length > 2000)
+        rawMsg = rawMsg.substring(0, 2000) + "...(truncated)";
+
       return [
-        `ExecutionId: ${d.id || ""}`,
-        `Status: ${d.jobExecutionStatus || ""}`,
-        `AutomationName: ${d.automationName || ""}`,
-        `BotName: ${d.currentBotName || ""}`,
-        `User: ${d.username || ""}`,
-        `Device: ${d.deviceName || ""}`,
-        `Start: ${d.startDateTime || ""}`,
-        `End: ${d.endDateTime || ""}`,
-        `ErrorCode: ${d.error?.code || ""}`,
-        `ErrorMessage: ${d.error?.message || ""}`,
-        `ErrorDetails: ${d.error?.details || ""}`,
-        `CorrectiveAction: ${d.error?.correctiveAction || ""}`,
-        `RawMessage: ${d.message || ""}`,
+        `ExecutionId: ${d.id || "N/A"}`,
+        `Status: ${d.jobExecutionStatus || "Unknown"}`,
+        `AutomationName: ${d.automationName || "N/A"}`,
+        `BotName: ${d.currentBotName || "N/A"}`,
+        `User: ${d.username || "N/A"}`,
+        `Device: ${d.deviceName || "N/A"}`,
+        `Time: ${d.startDateTime || ""} ~ ${d.endDateTime || ""}`,
+        `ErrorCode: ${d.error?.code || "N/A"}`,
+        `ErrorMessage: ${d.error?.message || "N/A"}`,
+        `ErrorDetails: ${d.error?.details || "N/A"}`,
+        `SysMessage: ${rawMsg}`,
       ].join("\n");
     };
 
-    /** AI 분석 실행 */
     const runAiAnalysis = async () => {
       if (!detail.value) return;
+
       const aiText = buildAiInputText(detail.value);
       if (!aiText.trim()) return;
 
@@ -244,30 +270,42 @@ export default defineComponent({
       analysis.value = null;
 
       try {
-        const res = await api.post("/api/ai/a360/error-analysis", {
+        // Backend DTO: A360AiAnalysisRequest와 필드명 일치 필수
+        const payload = {
           botName:
-            detail.value.currentBotName || detail.value.automationName || "",
-          errorCode: detail.value.error?.code || "",
+            detail.value.currentBotName ||
+            detail.value.automationName ||
+            "Unknown Bot",
+          errorCode: detail.value.error?.code || "Unknown Code",
           message: aiText,
           occurredAt:
-            detail.value.endDateTime || detail.value.startDateTime || "",
+            detail.value.endDateTime ||
+            detail.value.startDateTime ||
+            new Date().toISOString(),
           language: language.value,
-        });
+        };
+
+        const res = await api.post("/api/ai/a360/error-analysis", payload);
         analysis.value = res.data;
       } catch (err: any) {
+        console.error("AI Analysis Error:", err);
         aiError.value =
-          err?.response?.data?.message || "AI 분석에 실패했습니다.";
+          err?.response?.data?.message || "AI 분석 서버 연결에 실패했습니다.";
       } finally {
         aiLoading.value = false;
       }
     };
 
+    const triggerReAnalysis = () => {
+      runAiAnalysis();
+    };
+
+    // detail이 로드되면 자동으로 AI 분석 시작
     watch(
       () => detail.value,
       (val) => {
         if (val) runAiAnalysis();
-      },
-      { immediate: false }
+      }
     );
 
     onMounted(() => {
@@ -282,47 +320,58 @@ export default defineComponent({
       aiLoading,
       aiError,
       analysis,
-      runAiAnalysis,
+      triggerReAnalysis,
       getStatusClass,
+      goBack, // 함수 반환
     };
   },
 });
 </script>
 
 <style scoped>
-/* 구글 폰트 적용 (옵션) */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
 
 .page-container {
-  /* 배경은 전체를 채우되, 내용은 중앙 정렬 */
   padding: 40px 20px;
   background-color: #f3f4f6;
   min-height: 100vh;
-  font-family: "Inter", "Pretendard", sans-serif;
+  font-family: "Pretendard", sans-serif;
   color: #1f2937;
   display: flex;
-  justify-content: center; /* 가로 중앙 정렬 */
+  justify-content: center;
 }
 
-/* 중앙 정렬용 래퍼 */
 .content-wrapper {
   width: 100%;
-  max-width: 1400px; /* 최대 너비 제한으로 양쪽 여백 확보 */
-  margin: 0 auto;
+  max-width: 1400px;
 }
 
-/* 헤더 */
+/* Header */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
   margin-bottom: 30px;
-  padding: 0 10px; /* 미세한 내부 여백 */
+  padding: 0 10px;
 }
+.header-left .back-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  padding: 0;
+}
+.header-left .back-btn:hover {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
 .header-left h1 {
   font-size: 26px;
   font-weight: 800;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
   color: #111827;
 }
 .header-left .subtitle {
@@ -331,7 +380,7 @@ export default defineComponent({
   font-size: 15px;
 }
 
-/* 언어 선택기 */
+/* Language Selector */
 .lang-selector {
   display: flex;
   align-items: center;
@@ -357,21 +406,20 @@ export default defineComponent({
   padding: 4px;
 }
 
-/* 그리드 레이아웃 - 좌우 대칭 */
+/* Grid */
 .content-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr; /* 정확한 1:1 비율 */
-  gap: 30px; /* 카드 사이 간격 */
-  align-items: start; /* 상단 정렬 */
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  align-items: start;
 }
-
 @media (max-width: 1024px) {
   .content-grid {
-    grid-template-columns: 1fr; /* 화면이 좁아지면 1단 */
+    grid-template-columns: 1fr;
   }
 }
 
-/* 공통 카드 스타일 */
+/* Cards */
 .card {
   background: white;
   border-radius: 20px;
@@ -380,11 +428,10 @@ export default defineComponent({
   padding: 30px;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s;
 }
 .card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.1);
 }
 
 .card-header {
@@ -402,7 +449,7 @@ export default defineComponent({
   color: #374151;
 }
 
-/* === 좌측: 상세 정보 카드 === */
+/* Detail Card Specifics */
 .detail-card {
   border-left: 5px solid #6b7280;
 }
@@ -438,13 +485,12 @@ export default defineComponent({
   border-radius: 4px;
 }
 
-/* 상태 배지 */
+/* Badges */
 .status-badge {
   padding: 6px 14px;
   border-radius: 20px;
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.02em;
 }
 .status-badge.green {
   background: #dcfce7;
@@ -463,16 +509,13 @@ export default defineComponent({
   color: #4b5563;
 }
 
-/* 에러 박스 */
+/* Error Box */
 .error-box {
   background-color: #fef2f2;
   border: 1px solid #fee2e2;
   border-radius: 12px;
   padding: 20px;
   margin-top: 15px;
-}
-.error-header {
-  margin-bottom: 10px;
 }
 .error-code {
   background: #991b1b;
@@ -485,9 +528,9 @@ export default defineComponent({
 .error-msg {
   font-weight: 700;
   color: #7f1d1d;
-  margin-bottom: 12px;
-  line-height: 1.5;
+  margin: 12px 0;
   font-size: 15px;
+  line-height: 1.5;
 }
 .error-details {
   font-size: 13px;
@@ -500,14 +543,13 @@ export default defineComponent({
   border: 1px solid rgba(185, 28, 28, 0.1);
 }
 
-/* === 우측: AI 카드 === */
+/* AI Card Specifics */
 .ai-card {
   border: 1px solid #e0e7ff;
   background: linear-gradient(to bottom, #ffffff, #fcfdff);
   position: relative;
   overflow: hidden;
 }
-/* 상단 그라데이션 보더 효과 */
 .ai-card::before {
   content: "";
   position: absolute;
@@ -517,8 +559,17 @@ export default defineComponent({
   height: 5px;
   background: linear-gradient(90deg, #6366f1, #a855f7);
 }
-
-.ai-header h2 {
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ai-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ai-title h2 {
   background: linear-gradient(90deg, #4f46e5, #9333ea);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -532,8 +583,21 @@ export default defineComponent({
   border-radius: 6px;
   border: 1px solid #c7d2fe;
 }
+.retry-btn {
+  background: white;
+  border: 1px solid #c7d2fe;
+  color: #4f46e5;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.retry-btn:hover {
+  background: #eff6ff;
+}
 
-/* AI 결과 스타일 */
 .ai-section {
   margin-bottom: 28px;
 }
@@ -542,12 +606,9 @@ export default defineComponent({
   font-size: 15px;
   color: #6b7280;
   margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   font-weight: 600;
 }
-.summary-section p {
+.result-text {
   font-size: 16px;
   line-height: 1.7;
   color: #1f2937;
@@ -577,20 +638,18 @@ export default defineComponent({
   color: #4b5563;
   line-height: 1.6;
 }
-/* 커스텀 불릿 */
 .ai-sub-section li::before {
   content: "•";
-  color: #f59e0b; /* 오렌지색 불릿 */
+  color: #f59e0b;
   position: absolute;
   left: 4px;
   top: 0;
   font-weight: bold;
   font-size: 18px;
-  line-height: 1.2;
 }
 .ai-sub-section.action li::before {
   content: "✓";
-  color: #10b981; /* 초록색 체크 */
+  color: #10b981;
 }
 
 .business-section {
@@ -607,7 +666,7 @@ export default defineComponent({
   font-size: 15px;
 }
 
-/* 로딩 스피너 */
+/* Loading & Error */
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -629,7 +688,7 @@ export default defineComponent({
   width: 48px;
   height: 48px;
   border: 4px solid #e0e7ff;
-  border-top-color: #6366f1; /* 보라색 */
+  border-top-color: #6366f1;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 15px;
@@ -640,7 +699,23 @@ export default defineComponent({
   }
 }
 
-/* 빈 상태 */
+.error-state {
+  text-align: center;
+  color: #991b1b;
+  padding: 20px;
+  background: #fef2f2;
+  border-radius: 12px;
+}
+.retry-link {
+  background: none;
+  border: none;
+  text-decoration: underline;
+  color: #991b1b;
+  font-weight: bold;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
 .empty-state {
   text-align: center;
   padding: 80px 0;

@@ -68,21 +68,23 @@
           <div class="upload-form">
             <input
               type="file"
-              id="manualFile"
+              id="manualFileUploader"
               class="hidden-input"
               accept=".pdf,.txt,.docx"
               @change="onManualFileChange"
             />
             <label
-              for="manualFile"
+              for="manualFileUploader"
               class="placeholder-box"
-              :class="{ 'has-file': manualFile }"
+              :class="{ 'has-file': uploadedFile }"
             >
-              <span v-if="!manualFile">클릭하여 학습할 파일을 선택하세요</span>
-              <span v-else class="file-info">📄 {{ manualFile.name }}</span>
+              <span v-if="!uploadedFile"
+                >클릭하여 학습할 파일을 선택하세요</span
+              >
+              <span v-else class="file-info">📄 {{ uploadedFile.name }}</span>
             </label>
 
-            <div class="tag-input-group" v-if="manualFile">
+            <div class="tag-input-group" v-if="uploadedFile">
               <input
                 type="text"
                 v-model="learningTag"
@@ -94,7 +96,7 @@
 
           <button
             class="secondary-btn"
-            :disabled="!manualFile || loading"
+            :disabled="!uploadedFile || loading"
             @click="startManualLearning"
           >
             {{ loading ? "문서 분석 중..." : "지식 데이터 등록" }}
@@ -138,8 +140,7 @@ const logs = ref<LogItem[]>([]);
 const lastSyncTime = ref<string | null>(null);
 const terminalBody = ref<HTMLElement | null>(null);
 
-// 매뉴얼 학습 관련 상태
-const manualFile = ref<File | null>(null);
+const uploadedFile = ref<File | null>(null);
 const learningTag = ref("");
 
 const getTime = () => new Date().toLocaleTimeString("ko-KR", { hour12: false });
@@ -153,9 +154,6 @@ const addLog = (msg: string, type: "info" | "success" | "error" = "info") => {
   });
 };
 
-/**
- * 1. A360 자동 동기화 실행
- */
 const startA360Learning = async () => {
   if (loading.value) return;
 
@@ -180,25 +178,25 @@ const startA360Learning = async () => {
   }
 };
 
-/**
- * 2. 매뉴얼 문서 수동 학습 실행
- */
 const onManualFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement;
-  if (target.files && target.files.length > 0) {
-    manualFile.value = target.files[0];
+  // item(0)은 File 또는 null을 반환하여 undefined 문제를 방지합니다.
+  if (target.files) {
+    uploadedFile.value = target.files.item(0);
+  } else {
+    uploadedFile.value = null;
   }
 };
 
 const startManualLearning = async () => {
-  if (!manualFile.value || loading.value) return;
+  if (!uploadedFile.value || loading.value) return;
 
   loading.value = true;
   logs.value = [];
-  addLog(`신규 지식 습득 프로세스 시작: ${manualFile.value.name}`, "info");
+  addLog(`신규 지식 습득 프로세스 시작: ${uploadedFile.value.name}`, "info");
 
   const formData = new FormData();
-  formData.append("file", manualFile.value);
+  formData.append("file", uploadedFile.value);
   formData.append("tag", learningTag.value);
 
   try {
@@ -209,9 +207,14 @@ const startManualLearning = async () => {
 
     setTimeout(() => {
       addLog(res.data.message, "success");
-      manualFile.value = null;
+      uploadedFile.value = null;
       learningTag.value = "";
       loading.value = false;
+
+      const inputEl = document.getElementById(
+        "manualFileUploader"
+      ) as HTMLInputElement;
+      if (inputEl) inputEl.value = "";
     }, 1000);
   } catch (e: any) {
     addLog("지식 등록 중 오류가 발생했습니다.", "error");
@@ -221,7 +224,6 @@ const startManualLearning = async () => {
 </script>
 
 <style scoped>
-/* 기존 스타일 유지 및 매뉴얼 학습용 스타일 보강 */
 .learning-page {
   padding: 40px;
   max-width: 1300px;
@@ -313,7 +315,46 @@ const startManualLearning = async () => {
   line-height: 1.6;
 }
 
-/* 업로드 영역 */
+.target-list {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 30px;
+}
+.target-item {
+  flex: 1;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.t-icon {
+  font-size: 24px;
+}
+.t-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.action-area {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.last-sync {
+  font-size: 12px;
+  color: #9ca3af;
+}
+.last-sync span {
+  color: #4b5563;
+  font-weight: 600;
+}
+
 .upload-form {
   margin-bottom: 24px;
 }
@@ -370,11 +411,19 @@ const startManualLearning = async () => {
   cursor: pointer;
   border: none;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 .primary-btn {
   background: linear-gradient(135deg, #4f46e5, #4338ca);
   color: white;
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+.primary-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(79, 70, 229, 0.3);
 }
 .secondary-btn {
   background: #4b5563;
@@ -387,7 +436,20 @@ const startManualLearning = async () => {
   cursor: not-allowed;
 }
 
-/* 터미널 (로그) */
+.loader {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .log-terminal {
   background: #111827;
   border-radius: 16px;
@@ -422,6 +484,7 @@ const startManualLearning = async () => {
 .dot.green {
   background: #27c93f;
 }
+
 .terminal-title {
   color: #9ca3af;
   font-size: 12px;
@@ -462,6 +525,7 @@ const startManualLearning = async () => {
     opacity: 0;
   }
 }
+
 .hidden-input {
   display: none;
 }

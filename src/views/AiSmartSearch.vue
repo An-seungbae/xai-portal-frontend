@@ -112,7 +112,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from "vue";
 import api from "../api/axios";
-// 수정된 부분: 이미지 직접 import (상대 경로 사용)
 import aiAvatar from "../assets/vue.svg";
 
 // === 인터페이스 ===
@@ -146,6 +145,10 @@ function onFileChange(e: Event) {
   const target = e.target as HTMLInputElement;
   if (target.files && target.files.length > 0) {
     const file = target.files[0];
+
+    // [수정] 파일 존재 여부 명시적 확인 (TypeScript 에러 방지)
+    if (!file) return;
+
     if (!file.type.startsWith("image/")) {
       alert("이미지 파일만 가능합니다.");
       target.value = "";
@@ -153,6 +156,7 @@ function onFileChange(e: Event) {
     }
 
     selectedFile.value = file;
+    // 이제 file은 확실히 존재하므로 에러가 발생하지 않습니다.
     previewUrl.value = URL.createObjectURL(file);
   }
   target.value = "";

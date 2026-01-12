@@ -2,32 +2,35 @@
   <div class="dashboard-container">
     <header class="dashboard-header">
       <div class="header-left">
+        <h1 class="main-title">Control Tower</h1>
         <p class="sub-text">AI 기반 RPA 통합 관제 시스템</p>
       </div>
       <div class="header-right">
-        <span class="date-badge">{{ currentDate }}</span>
+        <span class="date-badge">📅 {{ currentDate }}</span>
       </div>
     </header>
 
     <section class="metrics-row">
       <div class="metric-card total">
-        <div class="metric-icon">🤖</div>
+        <div class="metric-icon-bg blue">🤖</div>
         <div class="metric-info">
           <span class="label">Total Bots</span>
-          <span class="value">{{ briefing?.totalExecutions || "-" }}</span>
+          <span class="value">{{ briefing?.totalExecutions || 0 }}</span>
         </div>
       </div>
 
       <div class="metric-card success">
-        <div class="metric-icon">✅</div>
+        <div class="metric-icon-bg green">✅</div>
         <div class="metric-info">
           <span class="label">Success Rate</span>
-          <span class="value">{{ briefing?.successRate || 0 }}%</span>
+          <span class="value"
+            >{{ briefing?.successRate || 0 }}<small>%</small></span
+          >
         </div>
       </div>
 
       <div class="metric-card fail">
-        <div class="metric-icon">🚨</div>
+        <div class="metric-icon-bg red">🚨</div>
         <div class="metric-info">
           <span class="label">Failures</span>
           <span class="value">{{ briefing?.failedCount || 0 }}</span>
@@ -35,7 +38,7 @@
       </div>
 
       <div class="metric-card ai">
-        <div class="metric-icon">🧠</div>
+        <div class="metric-icon-bg purple">🧠</div>
         <div class="metric-info">
           <span class="label">AI Analyzed</span>
           <span class="value">{{ briefing?.aiAnalysisCount || 0 }}</span>
@@ -47,7 +50,9 @@
       <div class="content-card briefing-card">
         <div class="card-header">
           <div class="header-title-row">
-            <h3>📢 AI Daily Intelligence Report</h3>
+            <span class="ai-badge">AI Insight</span>
+            <h3>Daily Intelligence Report</h3>
+
             <div class="lang-toggle">
               <button
                 :class="{ active: currentLang === 'ko' }"
@@ -66,26 +71,34 @@
             </div>
           </div>
 
-          <span v-if="loading" class="status-badge loading">Generating...</span>
-          <span v-else class="status-badge done">Updated</span>
+          <div v-if="loading" class="status-indicator loading">
+            <span class="dot"></span> Analyzing...
+          </div>
+          <div v-else class="status-indicator done">
+            <span class="dot"></span> Updated
+          </div>
         </div>
+
         <div class="card-body">
-          <div v-if="loading" class="loading-container">
+          <div v-if="loading" class="loading-state">
             <div class="spinner"></div>
-            <p>오늘의 운영 데이터를 분석하여 보고서를 작성 중입니다...</p>
+            <p>AI가 오늘의 A360 운영 데이터를 분석하고 있습니다...</p>
           </div>
           <div
             v-else-if="briefing"
             class="report-content"
             v-html="briefing.briefingMessage"
           ></div>
-          <div v-else class="error-text">보고서를 불러오지 못했습니다.</div>
+          <div v-else class="error-state">
+            <p>리포트를 불러오지 못했습니다.</p>
+            <button @click="fetchBriefing" class="retry-btn">다시 시도</button>
+          </div>
         </div>
       </div>
 
       <div class="content-card tasks-card">
         <div class="card-header">
-          <h3>📊 My Work Status</h3>
+          <h3>📊 Operation Status</h3>
         </div>
         <div class="card-body">
           <div class="task-summary">
@@ -119,15 +132,22 @@
               <div class="progress-bar-bg">
                 <div
                   class="progress-bar-fill purple"
-                  :style="{ width: '75%' }"
+                  :style="{
+                    width: getWidth(
+                      briefing?.aiAnalysisCount,
+                      briefing?.failedCount
+                    ),
+                  }"
                 ></div>
               </div>
             </div>
 
             <div class="task-item">
               <div class="task-label">
-                <span>System Stability</span>
-                <span class="task-count green">Good</span>
+                <span>System Health</span>
+                <span class="task-count green">{{
+                  briefing?.successRate >= 90 ? "Good" : "Check"
+                }}</span>
               </div>
               <div class="progress-bar-bg">
                 <div
@@ -139,14 +159,14 @@
           </div>
 
           <div class="quick-links">
-            <button class="action-btn" @click="$router.push('/errors')">
-              오류 관리 바로가기
+            <button class="action-btn primary" @click="$router.push('/errors')">
+              ⚡ 오류 관리 바로가기
             </button>
             <button
               class="action-btn secondary"
               @click="$router.push('/ai/history')"
             >
-              분석 이력 보기
+              📜 분석 이력 조회
             </button>
           </div>
         </div>
@@ -160,7 +180,7 @@ import { defineComponent, onMounted, ref } from "vue";
 import api from "../api/axios";
 
 interface DailyBriefing {
-  briefingMessage: string; // HTML content
+  briefingMessage: string; // HTML content from OpenAI
   totalExecutions: number;
   successCount: number;
   failedCount: number;
@@ -174,35 +194,39 @@ export default defineComponent({
   setup() {
     const briefing = ref<DailyBriefing | null>(null);
     const loading = ref(true);
-    const currentDate = ref(new Date().toLocaleDateString());
-
-    // [추가] 현재 선택된 언어 상태 (기본값: ko)
+    const currentDate = ref(
+      new Date().toLocaleDateString("ko-KR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        weekday: "long",
+      })
+    );
     const currentLang = ref("ko");
 
     const fetchBriefing = async () => {
+      loading.value = true;
       try {
-        loading.value = true;
-        // [수정] lang 파라미터 전달
-        const res = await api.get("/api/ai/analysis/daily-briefing", {
+        // [수정됨] 올바른 API 경로: /api/ai/a360/daily-briefing
+        const res = await api.get("/api/ai/a360/daily-briefing", {
           params: { lang: currentLang.value },
         });
         briefing.value = res.data;
       } catch (e) {
-        console.error("Failed to load dashboard data", e);
+        console.error("Dashboard Data Load Failed:", e);
       } finally {
         loading.value = false;
       }
     };
 
-    // [추가] 언어 변경 핸들러
     const changeLang = (lang: string) => {
       if (currentLang.value === lang) return;
       currentLang.value = lang;
-      fetchBriefing(); // 재조회
+      fetchBriefing();
     };
 
-    const getWidth = (val: number | undefined, total: number | undefined) => {
-      if (!val || !total || total === 0) return "0%";
+    const getWidth = (val?: number, total?: number) => {
+      if (!val || !total || total === 0) return "5%"; // 최소 너비
       return Math.min((val / total) * 100, 100) + "%";
     };
 
@@ -215,6 +239,7 @@ export default defineComponent({
       loading,
       currentDate,
       currentLang,
+      fetchBriefing,
       changeLang,
       getWidth,
     };
@@ -223,202 +248,278 @@ export default defineComponent({
 </script>
 
 <style scoped>
-/* 전체 컨테이너: 부드러운 회색 배경 */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
+
 .dashboard-container {
   padding: 30px;
-  background-color: #f3f4f6;
+  background-color: #f8f9fc;
   min-height: 100vh;
   font-family: "Pretendard", sans-serif;
 }
 
-/* 헤더 */
+/* Header */
 .dashboard-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   margin-bottom: 30px;
 }
+.main-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 5px 0;
+}
 .sub-text {
-  color: #6b7280;
-  margin: 5px 0 0;
+  color: #64748b;
+  margin: 0;
+  font-size: 14px;
 }
 .date-badge {
-  background: #fff;
+  background: white;
   padding: 8px 16px;
-  border-radius: 20px;
+  border-radius: 99px;
   font-weight: 600;
-  color: #4b5563;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  color: #475569;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+  border: 1px solid #e2e8f0;
+  font-size: 14px;
 }
 
-/* Metrics Row (카드 4개) */
+/* Metrics Row */
 .metrics-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 24px;
   margin-bottom: 30px;
 }
-
 .metric-card {
   background: white;
-  padding: 20px;
-  border-radius: 16px;
+  padding: 24px;
+  border-radius: 20px;
   display: flex;
   align-items: center;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
   transition: transform 0.2s;
 }
 .metric-card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-4px);
 }
 
-.metric-icon {
-  font-size: 2rem;
-  margin-right: 15px;
-  width: 50px;
-  height: 50px;
+.metric-icon-bg {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3f4f6;
-  border-radius: 12px;
+  font-size: 28px;
+  margin-right: 20px;
 }
+.metric-icon-bg.blue {
+  background: #eff6ff;
+}
+.metric-icon-bg.green {
+  background: #f0fdf4;
+}
+.metric-icon-bg.red {
+  background: #fef2f2;
+}
+.metric-icon-bg.purple {
+  background: #f5f3ff;
+}
+
 .metric-info {
   display: flex;
   flex-direction: column;
 }
 .metric-info .label {
-  font-size: 0.85rem;
-  color: #6b7280;
+  font-size: 13px;
+  color: #64748b;
   font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 4px;
 }
 .metric-info .value {
-  font-size: 1.5rem;
+  font-size: 28px;
   font-weight: 800;
-  color: #111827;
+  color: #0f172a;
+  line-height: 1;
+}
+.metric-info .value small {
+  font-size: 16px;
+  color: #94a3b8;
+  font-weight: 600;
+  margin-left: 2px;
 }
 
-/* Main Content Row */
+/* Main Content */
 .main-content-row {
   display: flex;
-  gap: 20px;
+  gap: 24px;
 }
-
-/* 공통 카드 스타일 */
 .content-card {
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 .card-header {
-  padding: 20px 25px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 20px 30px;
+  border-bottom: 1px solid #f1f5f9;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-
 .header-title-row {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 12px;
 }
-
 .card-header h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 18px;
   font-weight: 700;
-  color: #374151;
+  color: #1e293b;
 }
+.ai-badge {
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
 .card-body {
-  padding: 25px;
+  padding: 30px;
   flex-grow: 1;
 }
 
-/* AI Briefing Card (왼쪽, 넓게) */
+/* Briefing Card */
 .briefing-card {
-  flex: 2; /* 2:1 비율 */
+  flex: 2;
 }
-.status-badge {
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: 12px;
+.status-indicator {
+  font-size: 13px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.status-badge.loading {
-  background: #e0f2fe;
-  color: #0369a1;
+.status-indicator.loading {
+  color: #6366f1;
 }
-.status-badge.done {
-  background: #dcfce7;
-  color: #15803d;
+.status-indicator.done {
+  color: #10b981;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: block;
+}
+.status-indicator.loading .dot {
+  background: #6366f1;
+  animation: pulse 1.5s infinite;
+}
+.status-indicator.done .dot {
+  background: #10b981;
+}
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
-/* 언어 토글 스타일 */
 .lang-toggle {
-  background: #f3f4f6;
-  border-radius: 20px;
-  padding: 2px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 4px;
   display: flex;
-  gap: 2px;
 }
 .lang-toggle button {
-  background: transparent;
   border: none;
-  padding: 4px 10px;
-  font-size: 11px;
+  background: none;
+  padding: 4px 12px;
+  font-size: 12px;
   font-weight: 700;
-  color: #9ca3af;
-  border-radius: 18px;
+  color: #94a3b8;
   cursor: pointer;
+  border-radius: 8px;
   transition: all 0.2s;
 }
 .lang-toggle button.active {
   background: white;
-  color: #4f46e5;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-.lang-toggle button:hover:not(.active) {
-  color: #6b7280;
+  color: #6366f1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* 리포트 내용 스타일 (AI가 생성한 HTML 대응) */
 .report-content {
-  line-height: 1.7;
-  color: #4b5563;
+  color: #334155;
+  line-height: 1.8;
+  font-size: 15px;
 }
+/* AI HTML Content Styles */
 :deep(h4) {
-  color: #1f2937;
-  margin-top: 20px;
-  margin-bottom: 10px;
-  border-left: 4px solid #6366f1;
-  padding-left: 10px;
+  color: #1e293b;
+  margin: 24px 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 :deep(ul) {
-  padding-left: 20px;
-  margin-bottom: 15px;
+  margin: 0 0 20px 0;
+  padding-left: 0;
+  list-style: none;
 }
 :deep(li) {
-  margin-bottom: 5px;
+  position: relative;
+  padding-left: 20px;
+  margin-bottom: 8px;
+  color: #475569;
+}
+:deep(li::before) {
+  content: "•";
+  color: #cbd5e1;
+  position: absolute;
+  left: 4px;
+  font-weight: bold;
+}
+:deep(b) {
+  color: #0f172a;
+  font-weight: 600;
 }
 
-/* Tasks Card (오른쪽) */
+/* Tasks Card */
 .tasks-card {
   flex: 1;
 }
 .task-item {
-  margin-bottom: 25px;
+  margin-bottom: 28px;
 }
 .task-label {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 0.9rem;
+  margin-bottom: 10px;
+  font-size: 14px;
   font-weight: 600;
-  color: #4b5563;
+  color: #475569;
+}
+.task-count {
+  font-weight: 700;
 }
 .task-count.red {
   color: #ef4444;
@@ -431,78 +532,95 @@ export default defineComponent({
 }
 
 .progress-bar-bg {
-  height: 10px;
-  background: #f3f4f6;
-  border-radius: 5px;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
   overflow: hidden;
 }
 .progress-bar-fill {
   height: 100%;
-  border-radius: 5px;
-  transition: width 1s ease-in-out;
+  border-radius: 4px;
+  transition: width 1s ease;
 }
 .progress-bar-fill.red {
-  background: linear-gradient(90deg, #f87171, #ef4444);
+  background: #ef4444;
 }
 .progress-bar-fill.purple {
-  background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+  background: #8b5cf6;
 }
 .progress-bar-fill.green {
-  background: linear-gradient(90deg, #34d399, #10b981);
+  background: #10b981;
 }
 
 .quick-links {
   margin-top: 40px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .action-btn {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
   font-weight: 600;
+  font-size: 14px;
   cursor: pointer;
-  background: #1f2937;
-  color: white;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
-.action-btn:hover {
-  background: #374151;
+.action-btn.primary {
+  background: #1e293b;
+  color: white;
+  box-shadow: 0 4px 6px -1px rgba(30, 41, 59, 0.2);
+}
+.action-btn.primary:hover {
+  background: #0f172a;
+  transform: translateY(-1px);
 }
 .action-btn.secondary {
   background: white;
-  border: 1px solid #d1d5db;
-  color: #374151;
+  border: 1px solid #e2e8f0;
+  color: #475569;
 }
 .action-btn.secondary:hover {
-  background: #f9fafb;
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 
-/* 로딩 스피너 */
-.loading-container {
+.loading-state,
+.error-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #6b7280;
+  color: #64748b;
+  text-align: center;
 }
 .spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid #e5e7eb;
-  border-top: 4px solid #6366f1;
+  border: 3px solid #e2e8f0;
+  border-top-color: #6366f1;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin-bottom: 15px;
+  margin-bottom: 16px;
 }
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
+  to {
     transform: rotate(360deg);
   }
+}
+.retry-btn {
+  margin-top: 10px;
+  padding: 6px 16px;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
 }
 </style>

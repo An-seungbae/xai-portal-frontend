@@ -5,11 +5,10 @@ import LoginView from '../views/Login.vue'
 import ErrorManageView from '../views/ErrorManage.vue'
 import ErrorAiAnalysis from '../views/ErrorAiAnalysis.vue'
 import AiImageAnalysis from '../views/AiImageAnalysis.vue'
-// [추가] 이력 관련 컴포넌트
 import AiHistoryList from '../views/AiHistoryList.vue'
 import AiHistoryDetail from '../views/AiHistoryDetail.vue'
-import DashboardView from '../views/Dashboard.vue' // [추가] 대시보드 경로
-import AiSmartSearch from '../views/AiSmartSearch.vue' //  스마트 검색
+import DashboardView from '../views/Dashboard.vue'
+import AiSmartSearch from '../views/AiSmartSearch.vue'
 import AiPredictiveMaintenance from '../views/AiPredictiveMaintenance.vue';
 import AiLearningManage from '../views/AiLearningManage.vue';
 import AiCodeReview from '../views/AiCodeReview.vue';
@@ -66,9 +65,8 @@ const routes = [
     component: AiCodeReview,
     meta: { requiresAuth: true }
   },  
-  //  
   // ===============================
-  // 📷 OCR 이미지 분석
+  //  OCR 이미지 분석
   // ===============================
   {
     path: '/ai/image',
@@ -78,7 +76,7 @@ const routes = [
   },
 
   // ===============================
-  // 🕒 분석 이력 (추가됨)
+  //  분석 이력
   // ===============================
   {
     path: '/ai/history',
@@ -101,9 +99,10 @@ const router = createRouter({
 })
 
 /**
- * 🔐 전역 Router Guard
+ *  전역 Router Guard
+ * [수정] from -> _from 변경으로 미사용 변수 에러 해결
  */
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('accessToken')
 
   if (to.meta.requiresAuth && !token) {

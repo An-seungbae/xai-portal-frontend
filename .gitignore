@@ -1,3 +1,15 @@
+# 의존성 모듈 (절대 올리면 안 됩니다)
+node_modules/
+
+
+# 빌드 결과물
+dist/
+
+# 환경 변수 파일 (보안상 제외)
+.env
+.env.local
+.env.*.local
+
 # Logs
 logs
 *.log
