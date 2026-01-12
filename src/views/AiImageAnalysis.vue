@@ -1,17 +1,37 @@
 <template>
   <div class="analysis-container">
     <header class="page-header">
-      <h1 class="page-title">🔍 xAI 이미지 OCR 분석</h1>
+      <h1 class="page-title">👁️ Vision AI 이미지 분석</h1>
       <p class="page-desc">
-        이미지를 업로드하면 고성능 OCR 및 AI가 문서를 분석하여 핵심 정보를
-        구조화합니다.
+        문서의 텍스트를 추출하거나, RPA 실행 화면의 에러를 시각적으로
+        진단합니다.
       </p>
     </header>
+
+    <div class="mode-tabs">
+      <button
+        class="tab-btn"
+        :class="{ active: analysisMode === 'OCR' }"
+        @click="analysisMode = 'OCR'"
+      >
+        📄 문서 데이터 추출 (OCR)
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: analysisMode === 'DIAGNOSIS' }"
+        @click="analysisMode = 'DIAGNOSIS'"
+      >
+        🖥️ RPA 화면 에러 진단 (Vision)
+      </button>
+    </div>
 
     <section class="control-panel card">
       <div class="panel-body">
         <div class="upload-section">
-          <h3 class="section-title">📁 이미지 파일 선택</h3>
+          <h3 class="section-title">
+            {{ analysisMode === "OCR" ? "📁 문서 이미지" : "💻 스크린샷" }}
+            업로드
+          </h3>
 
           <div class="file-upload-box" :class="{ 'has-file': previewUrl }">
             <input
@@ -24,9 +44,18 @@
             <label for="fileInput" class="upload-label">
               <div v-if="!previewUrl" class="upload-placeholder">
                 <div class="icon-circle">
-                  <span class="upload-icon">☁️</span>
+                  <span class="upload-icon">{{
+                    analysisMode === "OCR" ? "📄" : "🖥️"
+                  }}</span>
                 </div>
-                <p class="main-text">클릭하거나 이미지를 여기로 드래그하세요</p>
+                <p class="main-text">
+                  {{
+                    analysisMode === "OCR"
+                      ? "문서 이미지를"
+                      : "에러 화면 스크린샷을"
+                  }}
+                  드래그하세요
+                </p>
                 <span class="sub-text">지원 형식: JPG, PNG (최대 10MB)</span>
               </div>
               <div v-else class="preview-container">
@@ -41,33 +70,49 @@
 
         <div class="options-section">
           <div class="options-content">
-            <h3 class="section-title">⚙️ 분석 옵션</h3>
+            <h3 class="section-title">⚙️ 분석 설정</h3>
+
+            <transition name="fade">
+              <div v-if="analysisMode === 'DIAGNOSIS'" class="option-group">
+                <label class="option-label">사용자 코멘트 (선택)</label>
+                <textarea
+                  v-model="userPrompt"
+                  class="styled-textarea-sm"
+                  placeholder="예: 로그인 버튼을 눌렀는데 반응이 없습니다."
+                ></textarea>
+              </div>
+            </transition>
 
             <div class="option-group">
-              <label class="option-label">응답 언어 설정</label>
+              <label class="option-label">응답 언어</label>
               <div class="select-wrapper">
                 <select v-model="language" class="styled-select">
-                  <option value="KO">🇰🇷 한글 우선 (Korean Mode)</option>
-                  <option value="EN">🇺🇸 영문 우선 (English Mode)</option>
-                  <option value="BOTH">🌐 한글 + 영문 혼합 (Mixed)</option>
+                  <option value="KO">🇰🇷 한국어 (Korean)</option>
+                  <option value="EN">🇺🇸 영어 (English)</option>
                 </select>
               </div>
-              <p class="option-help">
-                문서에 포함된 주 언어를 선택하면 인식률이 향상됩니다.
-              </p>
             </div>
 
             <div class="action-group">
               <button
                 class="btn-primary analyze-btn"
+                :class="analysisMode === 'DIAGNOSIS' ? 'btn-vision' : ''"
                 :disabled="!selectedFileRef || loading"
                 @click="analyze"
               >
                 <div class="btn-content">
-                  <span class="btn-icon" v-if="!loading">🚀</span>
-                  <span class="btn-text">{{
-                    loading ? "AI 정밀 분석 진행 중..." : "이미지 분석 시작"
+                  <span class="btn-icon" v-if="!loading">{{
+                    analysisMode === "OCR" ? "🔍" : "🧠"
                   }}</span>
+                  <span class="btn-text">
+                    {{
+                      loading
+                        ? "AI 분석 진행 중..."
+                        : analysisMode === "OCR"
+                        ? "텍스트 추출 시작"
+                        : "화면 원인 진단 시작"
+                    }}
+                  </span>
                 </div>
               </button>
 
@@ -82,7 +127,7 @@
                     ? "저장 중..."
                     : savedDocumentId
                     ? "저장 완료"
-                    : "분석 결과 DB 저장"
+                    : "분석 결과 저장"
                 }}
               </button>
             </div>
@@ -91,8 +136,7 @@
               <div v-if="savedDocumentId" class="save-success-msg">
                 <span class="check-icon">✅</span>
                 <span
-                  >문서가 안전하게 저장되었습니다. (ID:
-                  <strong>{{ savedDocumentId }}</strong
+                  >저장되었습니다. (ID: <strong>{{ savedDocumentId }}</strong
                   >)</span
                 >
               </div>
@@ -105,11 +149,23 @@
     <transition name="fade">
       <div v-if="loading" class="loading-overlay">
         <div class="spinner-container">
-          <div class="spinner"></div>
-          <p class="loading-title">AI 분석 중...</p>
+          <div
+            class="spinner"
+            :class="{ 'vision-spinner': analysisMode === 'DIAGNOSIS' }"
+          ></div>
+          <p class="loading-title">
+            {{
+              analysisMode === "OCR"
+                ? "OCR 텍스트 추출 중..."
+                : "GPT-4o Vision 분석 중..."
+            }}
+          </p>
           <p class="loading-desc">
-            텍스트를 추출하고 의미를 해석하고 있습니다.<br />잠시만 기다려
-            주세요.
+            {{
+              analysisMode === "OCR"
+                ? "문서의 구조를 파악하고 있습니다."
+                : "화면의 UI 요소와 에러 메시지를 시각적으로 해석합니다."
+            }}
           </p>
         </div>
       </div>
@@ -117,14 +173,21 @@
 
     <transition name="slide-up">
       <div v-if="result && !loading" class="result-container">
-        <div class="insight-banner">
+        <div
+          class="insight-banner"
+          :class="{ 'vision-banner': analysisMode === 'DIAGNOSIS' }"
+        >
           <div class="insight-icon-box">💡</div>
           <div class="insight-content">
-            <strong class="insight-title">AI 비즈니스 인사이트</strong>
-            <p class="insight-text">
+            <strong class="insight-title">
               {{
-                result.businessMessage || "분석된 비즈니스 메시지가 없습니다."
+                analysisMode === "OCR"
+                  ? "문서 분석 인사이트"
+                  : "AI 화면 진단 결과"
               }}
+            </strong>
+            <p class="insight-text">
+              {{ result.businessMessage || "분석된 메시지가 없습니다." }}
             </p>
           </div>
         </div>
@@ -132,16 +195,23 @@
         <div class="result-grid">
           <section class="card summary-card">
             <div class="card-header">
-              <h3>🤖 AI 분석 리포트</h3>
+              <h3>🤖 상세 분석 리포트</h3>
             </div>
             <div class="card-body scrollable-body">
               <div class="report-section">
-                <h4>📄 요약</h4>
+                <h4>📄 요약 (Summary)</h4>
                 <p class="report-text">{{ result.summary || "-" }}</p>
               </div>
 
               <div class="report-section">
-                <h4>⚠️ 원인 후보</h4>
+                <h4>
+                  ⚠️
+                  {{
+                    analysisMode === "OCR"
+                      ? "주요 이슈"
+                      : "추정 원인 (Root Cause)"
+                  }}
+                </h4>
                 <ul
                   class="styled-list bullet"
                   v-if="result.causeCandidates?.length"
@@ -154,7 +224,7 @@
               </div>
 
               <div class="report-section">
-                <h4>✅ 권장 조치</h4>
+                <h4>🚀 권장 조치 (Action Plan)</h4>
                 <ul
                   class="styled-list check"
                   v-if="result.recommendedActions?.length"
@@ -168,7 +238,7 @@
             </div>
           </section>
 
-          <section class="card data-card">
+          <section class="card data-card" v-if="analysisMode === 'OCR'">
             <div class="card-header">
               <h3>📊 구조화된 데이터</h3>
               <span
@@ -187,8 +257,8 @@
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>항목 (Field)</th>
-                    <th>추출 값 (Value)</th>
+                    <th>항목</th>
+                    <th>값</th>
                     <th class="text-center">신뢰도</th>
                   </tr>
                 </thead>
@@ -216,23 +286,30 @@
               </table>
               <div v-else class="no-data-state">
                 <span class="no-data-icon">📭</span>
-                <p>추출된 구조화 데이터가 없습니다.</p>
+                <p>추출된 데이터 필드가 없습니다.</p>
               </div>
             </div>
           </section>
         </div>
 
-        <section class="card raw-text-card">
+        <section class="card raw-text-card" v-if="result.ocrRawText">
           <details>
             <summary class="card-header clickable">
-              <h3>📄 OCR 원본 텍스트 보기</h3>
+              <h3>
+                📄
+                {{
+                  analysisMode === "OCR"
+                    ? "OCR 원본 텍스트"
+                    : "Vision 분석 로그"
+                }}
+              </h3>
               <span class="toggle-icon">▼</span>
             </summary>
             <div class="card-body">
               <textarea
                 class="styled-textarea"
                 readonly
-                :value="result.ocrRawText || ''"
+                :value="result.ocrRawText"
               ></textarea>
             </div>
           </details>
@@ -246,10 +323,12 @@
 import { ref, computed } from "vue";
 import api from "../api/axios";
 
-// 상태 변수
+// === 상태 변수 ===
+const analysisMode = ref<"OCR" | "DIAGNOSIS">("OCR"); // 분석 모드
 const selectedFileRef = ref<File | null>(null);
 const previewUrl = ref<string | null>(null);
-const language = ref<"KO" | "EN" | "BOTH">("KO");
+const userPrompt = ref(""); // 사용자 코멘트
+const language = ref<"KO" | "EN">("KO");
 
 const result = ref<any>(null);
 const loading = ref(false);
@@ -257,26 +336,27 @@ const saving = ref(false);
 const savedDocumentId = ref<number | null>(null);
 
 /**
- * 파일 선택 핸들러 (타입 에러 수정됨)
+ * 파일 선택 핸들러
  */
 function onFileChange(e: Event) {
   const target = e.target as HTMLInputElement;
   if (!target || !target.files || target.files.length === 0) return;
 
   const selected = target.files[0];
-  if (!selected) return; // 확실한 체크
+  if (!selected) return;
 
   selectedFileRef.value = selected;
 
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
   previewUrl.value = URL.createObjectURL(selected);
 
+  // 파일 변경 시 결과 초기화
   result.value = null;
   savedDocumentId.value = null;
 }
 
 /**
- * 분석 요청
+ * 분석 요청 (모드에 따라 분기)
  */
 async function analyze() {
   if (!selectedFileRef.value) return;
@@ -289,13 +369,23 @@ async function analyze() {
   formData.append("image", selectedFileRef.value);
   formData.append("language", language.value);
 
+  // [중요] 사용자 코멘트가 있으면 함께 전송
+  if (userPrompt.value.trim()) {
+    formData.append("prompt", userPrompt.value);
+  }
+
   try {
-    // 🔹 [중요] axios.ts에서 Content-Type 설정을 뺐으므로,
-    // formData를 보내면 자동으로 multipart/form-data가 적용됩니다.
-    const res = await api.post("/api/ai/image/analyze", formData);
+    let url = "/api/ai/image/analyze"; // 기본 OCR
+
+    // 🔥 화면 진단 모드일 경우 신규 API 호출
+    if (analysisMode.value === "DIAGNOSIS") {
+      url = "/api/ai/image/diagnosis";
+    }
+
+    const res = await api.post(url, formData);
     result.value = res.data;
   } catch (e) {
-    alert("이미지 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    alert("분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     console.error(e);
   } finally {
     loading.value = false;
@@ -303,7 +393,7 @@ async function analyze() {
 }
 
 /**
- * DB 저장 (이미지 파일 포함 전송)
+ * DB 저장
  */
 async function saveToDb() {
   if (!result.value) return;
@@ -313,27 +403,23 @@ async function saveToDb() {
     const jsonPayload = {
       analysisResult: result.value,
       sourceFileName: selectedFileRef.value?.name ?? null,
+      // 저장 시 어떤 모드로 분석했는지 메모에 남기거나 할 수 있음
     };
 
     const formData = new FormData();
     formData.append(
       "request",
-      new Blob([JSON.stringify(jsonPayload)], {
-        type: "application/json",
-      })
+      new Blob([JSON.stringify(jsonPayload)], { type: "application/json" })
     );
 
     if (selectedFileRef.value) {
       formData.append("file", selectedFileRef.value);
     }
 
-    // 🔹 [수정] 수동으로 Content-Type을 지정하지 않습니다.
-    // 브라우저가 알아서 boundary를 포함한 올바른 헤더를 만듭니다.
     const res = await api.post("/api/ai/image/save", formData);
-
     savedDocumentId.value = res.data?.documentId ?? null;
   } catch (e) {
-    alert("결과 저장에 실패했습니다.");
+    alert("저장에 실패했습니다.");
     console.error(e);
   } finally {
     saving.value = false;
@@ -380,16 +466,78 @@ function getConfidenceClass(val: number | null) {
 </script>
 
 <style scoped>
-/* === 전체 레이아웃 === */
+/* 기존 스타일 유지하면서 추가된 부분만 강조 */
 .analysis-container {
   max-width: 1360px;
   margin: 0 auto;
   padding: 40px 30px;
-  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
-    Roboto, sans-serif;
+  font-family: "Pretendard", sans-serif;
   color: #333;
 }
 
+/* === 모드 선택 탭 === */
+.mode-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 30px;
+}
+.tab-btn {
+  padding: 12px 24px;
+  border-radius: 30px;
+  border: 1px solid #e0e0e0;
+  background: white;
+  color: #666;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+.tab-btn.active {
+  background: #333;
+  color: white;
+  border-color: #333;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+.tab-btn:hover:not(.active) {
+  background: #f8f8f8;
+}
+
+/* 텍스트 영역 (작은 사이즈) */
+.styled-textarea-sm {
+  width: 100%;
+  height: 80px;
+  padding: 12px;
+  border: 1px solid #dce0e5;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: none;
+}
+.styled-textarea-sm:focus {
+  border-color: #646cff;
+  outline: none;
+}
+
+/* 버튼 스타일 변형 (Vision 모드) */
+.btn-vision {
+  background: linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%) !important;
+  box-shadow: 0 8px 20px rgba(138, 43, 226, 0.3) !important;
+}
+
+/* 비전 배너 스타일 */
+.vision-banner {
+  background: linear-gradient(120deg, #6a11cb 0%, #2575fc 100%) !important;
+  box-shadow: 0 10px 30px rgba(37, 117, 252, 0.25) !important;
+}
+
+/* 스피너 색상 변경 */
+.vision-spinner {
+  border-top-color: #8e2de2 !important;
+}
+
+/* === (이하 기존 CSS 그대로 유지) === */
 .page-header {
   margin-bottom: 40px;
   text-align: center;
@@ -406,8 +554,6 @@ function getConfidenceClass(val: number | null) {
   margin: 0;
   font-size: 1.1rem;
 }
-
-/* === 공통 카드 스타일 === */
 .card {
   background: white;
   border-radius: 20px;
@@ -433,8 +579,6 @@ function getConfidenceClass(val: number | null) {
 .card-body {
   padding: 32px;
 }
-
-/* === 1. 제어 패널 === */
 .control-panel {
   margin-bottom: 40px;
 }
@@ -443,7 +587,6 @@ function getConfidenceClass(val: number | null) {
   gap: 50px;
   align-items: stretch;
 }
-
 .section-title {
   font-size: 1.1rem;
   font-weight: 700;
@@ -453,8 +596,6 @@ function getConfidenceClass(val: number | null) {
   align-items: center;
   gap: 8px;
 }
-
-/* 업로드 영역 */
 .upload-section {
   flex: 1.2;
   min-width: 350px;
@@ -464,7 +605,7 @@ function getConfidenceClass(val: number | null) {
 }
 .file-upload-box {
   width: 100%;
-  height: 400px; /* 높이 400px (요청 반영) */
+  height: 400px;
   border-radius: 16px;
   border: 2px dashed #dce0e5;
   background: #f8f9fa;
@@ -481,7 +622,6 @@ function getConfidenceClass(val: number | null) {
   border-color: #e0e0e0;
   background: #fff;
 }
-
 .upload-label {
   width: 100%;
   height: 100%;
@@ -522,7 +662,6 @@ function getConfidenceClass(val: number | null) {
   font-size: 0.9rem;
   color: #999;
 }
-
 .preview-container {
   width: 100%;
   height: 100%;
@@ -556,8 +695,6 @@ function getConfidenceClass(val: number | null) {
   font-size: 0.95rem;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
-
-/* 옵션 및 액션 영역 */
 .options-section {
   flex: 1;
   display: flex;
@@ -569,7 +706,6 @@ function getConfidenceClass(val: number | null) {
   max-width: 400px;
   margin: 0 auto;
 }
-
 .option-group {
   margin-bottom: 30px;
 }
@@ -601,13 +737,6 @@ function getConfidenceClass(val: number | null) {
   border-color: #646cff;
   box-shadow: 0 0 0 4px rgba(100, 108, 255, 0.1);
 }
-.option-help {
-  font-size: 0.85rem;
-  color: #999;
-  margin-top: 8px;
-  margin-bottom: 0;
-}
-
 .action-group {
   display: flex;
   flex-direction: column;
@@ -632,7 +761,6 @@ function getConfidenceClass(val: number | null) {
   align-items: center;
   gap: 10px;
 }
-
 .btn-primary {
   background: linear-gradient(135deg, #646cff 0%, #4a54e8 100%);
   color: white;
@@ -650,7 +778,6 @@ function getConfidenceClass(val: number | null) {
   cursor: not-allowed;
   box-shadow: none;
 }
-
 .btn-secondary {
   background: #f5f7fa;
   color: #444;
@@ -664,7 +791,6 @@ function getConfidenceClass(val: number | null) {
   opacity: 0.6;
   cursor: not-allowed;
 }
-
 .save-success-msg {
   margin-top: 20px;
   padding: 14px;
@@ -679,8 +805,6 @@ function getConfidenceClass(val: number | null) {
   align-items: center;
   gap: 8px;
 }
-
-/* === 로딩 오버레이 === */
 .loading-overlay {
   position: fixed;
   inset: 0;
@@ -722,13 +846,9 @@ function getConfidenceClass(val: number | null) {
     transform: rotate(360deg);
   }
 }
-
-/* === 2. 결과 영역 === */
 .result-container {
   margin-top: 50px;
 }
-
-/* 인사이트 배너 */
 .insight-banner {
   background: linear-gradient(120deg, #1565c0 0%, #0d47a1 100%);
   color: white;
@@ -771,8 +891,6 @@ function getConfidenceClass(val: number | null) {
   line-height: 1.6;
   font-weight: 500;
 }
-
-/* 결과 그리드 */
 .result-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
@@ -791,8 +909,6 @@ function getConfidenceClass(val: number | null) {
   max-height: 600px;
   padding-right: 16px;
 }
-
-/* AI 리포트 */
 .report-section {
   margin-bottom: 30px;
   padding-bottom: 20px;
@@ -819,7 +935,6 @@ function getConfidenceClass(val: number | null) {
   color: #333;
   font-size: 1.05rem;
 }
-
 .styled-list li {
   position: relative;
   padding-left: 28px;
@@ -848,8 +963,6 @@ function getConfidenceClass(val: number | null) {
   color: #aaa;
   font-style: italic;
 }
-
-/* 테이블 */
 .doc-type-badge {
   background: #e3f2fd;
   color: #1565c0;
@@ -908,8 +1021,6 @@ function getConfidenceClass(val: number | null) {
   margin-bottom: 10px;
   display: block;
 }
-
-/* 신뢰도 뱃지 */
 .confidence-badge {
   display: inline-block;
   padding: 6px 12px;
@@ -934,8 +1045,6 @@ function getConfidenceClass(val: number | null) {
 .text-center {
   text-align: center;
 }
-
-/* OCR 원본 텍스트 */
 .raw-text-card details summary {
   cursor: pointer;
   list-style: none;
@@ -972,8 +1081,6 @@ function getConfidenceClass(val: number | null) {
   resize: vertical;
   box-sizing: border-box;
 }
-
-/* === 애니메이션 및 반응형 === */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;
@@ -989,7 +1096,6 @@ function getConfidenceClass(val: number | null) {
   opacity: 0;
   transform: translateY(40px);
 }
-
 @media (max-width: 1024px) {
   .panel-body {
     flex-direction: column;
