@@ -68,8 +68,6 @@ import { authStore } from "../../store/auth";
 
 const router = useRouter();
 
-// [수정] 사용하지 않는 go, isActive 함수 제거 (빌드 에러 원인)
-
 function logout() {
   authStore.clearToken();
   router.push("/login");

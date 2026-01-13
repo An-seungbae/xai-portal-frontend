@@ -144,14 +144,18 @@
 
             <div class="task-item">
               <div class="task-label">
-                <span>System Health</span>
-                <span class="task-count green">{{
-                  briefing?.successRate >= 90 ? "Good" : "Check"
-                }}</span>
+                <span>System Stability</span>
+                <span
+                  class="task-count"
+                  :class="(briefing?.successRate || 0) >= 90 ? 'green' : 'red'"
+                >
+                  {{ (briefing?.successRate || 0) >= 90 ? "Good" : "Check" }}
+                </span>
               </div>
               <div class="progress-bar-bg">
                 <div
-                  class="progress-bar-fill green"
+                  class="progress-bar-fill"
+                  :class="(briefing?.successRate || 0) >= 90 ? 'green' : 'red'"
                   :style="{ width: (briefing?.successRate || 0) + '%' }"
                 ></div>
               </div>

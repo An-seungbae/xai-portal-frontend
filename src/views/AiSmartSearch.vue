@@ -8,6 +8,9 @@
       <div v-if="messages.length === 0" class="welcome-screen">
         <div class="welcome-logo">✨</div>
         <p class="welcome-text">무엇을 도와드릴까요?</p>
+        <p class="sub-text">
+          "어제 실패한 봇 분석해줘" 또는 "라이선스 현황 보여줘"
+        </p>
       </div>
 
       <div
@@ -18,26 +21,88 @@
       >
         <div class="profile-area">
           <div v-if="msg.role === 'ai'" class="ai-icon">
-            <img :src="aiAvatar" alt="AI" class="ai-avatar" />
+            <span class="sparkle-icon">🤖</span>
           </div>
         </div>
 
         <div class="message-content">
-          <div class="msg-info" v-if="msg.role === 'ai'">AI ChatRPA</div>
+          <div class="msg-info" v-if="msg.role === 'ai'">Charles</div>
 
           <div class="bubble">
-            <div v-if="msg.attachedImage" class="bubble-image-box">
-              <img :src="msg.attachedImage" alt="User Upload" />
-            </div>
+            <div
+              class="text-body markdown-body"
+              v-html="formatMessage(msg.content)"
+            ></div>
 
-            <div class="text-body" v-html="formatMessage(msg.content)"></div>
+            <div
+              v-if="msg.data && Object.keys(msg.data).length > 0"
+              class="data-viz-wrapper"
+            >
+              <div class="viz-tabs">
+                <button
+                  v-for="(_, key) in msg.data"
+                  :key="key"
+                  class="tab-btn"
+                  :class="{ active: msg.activeTab === String(key) }"
+                  @click="changeTab(index, String(key))"
+                >
+                  {{ formatHeader(String(key)) }}
+                </button>
+              </div>
 
-            <div v-if="msg.data && msg.data.length > 0" class="data-card">
-              <div v-for="(item, i) in msg.data" :key="i" class="data-item">
-                <div class="data-row" v-for="(val, key) in item" :key="key">
-                  <span class="d-key">{{ formatHeader(key) }}</span>
-                  <span class="d-val">{{ formatValue(val) }}</span>
-                </div>
+              <div class="view-options">
+                <button
+                  @click="setVizMode(index, 'table')"
+                  :class="{ active: msg.vizMode === 'table' }"
+                >
+                  📋 표
+                </button>
+                <button
+                  @click="setVizMode(index, 'chart')"
+                  :class="{ active: msg.vizMode === 'chart' }"
+                >
+                  📊 차트
+                </button>
+              </div>
+
+              <div
+                v-if="msg.vizMode === 'table'"
+                class="viz-content table-view"
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th
+                        v-for="h in getKeys(msg.data[msg.activeTab || ''])"
+                        :key="h"
+                      >
+                        {{ h }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, rIdx) in getList(
+                        msg.data[msg.activeTab || '']
+                      )"
+                      :key="rIdx"
+                    >
+                      <td
+                        v-for="h in getKeys(msg.data[msg.activeTab || ''])"
+                        :key="h"
+                      >
+                        {{ formatValue(row[h]) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                v-show="msg.vizMode === 'chart'"
+                class="viz-content chart-view"
+              >
+                <canvas :ref="(el) => setCanvasRef(el, index)"></canvas>
               </div>
             </div>
           </div>
@@ -58,20 +123,11 @@
 
     <div class="input-area-wrapper">
       <div class="input-box-container">
-        <button
-          class="attach-btn"
-          @click="triggerFileUpload"
-          title="이미지 추가"
-        >
+        <button class="attach-btn" title="이미지/파일 첨부 (준비중)">
           <span class="plus-icon">＋</span>
         </button>
 
         <div class="input-inner-wrapper">
-          <div v-if="previewUrl" class="inline-preview">
-            <img :src="previewUrl" alt="preview" />
-            <button class="remove-preview" @click="clearFile">×</button>
-          </div>
-
           <input
             type="text"
             class="gemini-input"
@@ -84,7 +140,7 @@
 
         <button
           class="send-btn"
-          :disabled="(!userPrompt && !selectedFile) || loading"
+          :disabled="!userPrompt.trim() || loading"
           @click="sendMessage"
         >
           <svg viewBox="0 0 24 24" class="send-icon">
@@ -92,35 +148,26 @@
           </svg>
         </button>
       </div>
-
       <p class="footer-note">
-        Charles may display inaccurate info, including about people, so
-        double-check its responses.
+        Charles can make mistakes. Please verify important information.
       </p>
-
-      <input
-        type="file"
-        ref="fileInputRef"
-        accept="image/*"
-        @change="onFileChange"
-        hidden
-      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from "vue";
+import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import api from "../api/axios";
-import aiAvatar from "../assets/vue.svg";
+import Chart from "chart.js/auto";
 
 // === 인터페이스 ===
 interface Message {
   role: "user" | "ai";
   content: string;
-  timestamp?: string;
-  attachedImage?: string;
-  data?: any[];
+  data?: any; // Map<String, Object> 형태
+  activeTab?: string; // 현재 선택된 데이터 탭 Key
+  vizMode?: "table" | "chart"; // 현재 뷰 모드
+  chartInstance?: any; // Chart.js 인스턴스
 }
 
 // === 상태 변수 ===
@@ -128,94 +175,150 @@ const messages = ref<Message[]>([]);
 const userPrompt = ref("");
 const loading = ref(false);
 const chatHistoryRef = ref<HTMLElement | null>(null);
-
-// 파일 관련 변수
-const fileInputRef = ref<HTMLInputElement | null>(null);
-const selectedFile = ref<File | null>(null);
-const previewUrl = ref<string | null>(null);
+const chartRefs = ref<Record<number, HTMLCanvasElement>>({});
 
 onMounted(() => scrollToBottom());
 
-// === 파일 핸들링 ===
-function triggerFileUpload() {
-  fileInputRef.value?.click();
-}
-
-function onFileChange(e: Event) {
-  const target = e.target as HTMLInputElement;
-  if (target.files && target.files.length > 0) {
-    const file = target.files[0];
-
-    // [수정] 파일 존재 여부 명시적 확인 (TypeScript 에러 방지)
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("이미지 파일만 가능합니다.");
-      target.value = "";
-      return;
-    }
-
-    selectedFile.value = file;
-    // 이제 file은 확실히 존재하므로 에러가 발생하지 않습니다.
-    previewUrl.value = URL.createObjectURL(file);
-  }
-  target.value = "";
-}
-
-function clearFile() {
-  selectedFile.value = null;
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
-  previewUrl.value = null;
-}
-
 // === 메시지 전송 ===
 async function sendMessage() {
-  if ((!userPrompt.value.trim() && !selectedFile.value) || loading.value)
-    return;
+  if (!userPrompt.value.trim() || loading.value) return;
 
   const currentPrompt = userPrompt.value;
-  const currentFile = selectedFile.value;
-  const displayImageUrl = previewUrl.value;
 
   // 1. 사용자 메시지 추가
-  messages.value.push({
-    role: "user",
-    content: currentPrompt,
-    attachedImage: currentFile ? displayImageUrl! : undefined,
-  });
-
-  // 초기화
+  messages.value.push({ role: "user", content: currentPrompt });
   userPrompt.value = "";
-  selectedFile.value = null;
-  previewUrl.value = null;
-
   scrollToBottom();
   loading.value = true;
 
   try {
-    const formData = new FormData();
-    formData.append("query", currentPrompt || "이미지 분석 요청");
-    if (currentFile) {
-      formData.append("file", currentFile);
+    // 2. API 호출 (JSON Body)
+    const res = await api.post("/api/ai/search", { query: currentPrompt });
+
+    // 3. AI 응답 처리
+    const { summary, data } = res.data;
+
+    // 초기 탭 설정 (데이터가 있으면 첫 번째 키)
+    let initialTab = "";
+    if (data && Object.keys(data).length > 0) {
+      // [수정] undefined일 경우 빈 문자열 할당하여 TS2322 에러 해결
+      initialTab = Object.keys(data)[0] || "";
     }
 
-    const res = await api.post("/api/ai/search", formData);
-
-    // 2. AI 응답 추가
-    messages.value.push({
+    const newMessage: Message = {
       role: "ai",
-      content: res.data.summary || "결과가 없습니다.",
-      data: res.data.data,
-    });
+      content: summary || "검색 결과가 없습니다.",
+      data: data,
+      activeTab: initialTab,
+      vizMode: "table", // 기본은 표
+    };
+
+    messages.value.push(newMessage);
+
+    // 차트로 보여달라고 했으면 차트로 전환
+    if (currentPrompt.includes("차트") && initialTab) {
+      setTimeout(() => setVizMode(messages.value.length - 1, "chart"), 100);
+    }
   } catch (e) {
     messages.value.push({
       role: "ai",
-      content: "죄송합니다. 오류가 발생했습니다.",
+      content: "죄송합니다. 처리 중 오류가 발생했습니다.",
     });
   } finally {
     loading.value = false;
     scrollToBottom();
   }
+}
+
+// === 시각화 로직 (Chart/Table) ===
+
+function changeTab(index: number, key: string) {
+  const msg = messages.value[index];
+  if (!msg) return;
+  msg.activeTab = key;
+  // 탭 변경 시 차트 갱신
+  if (msg.vizMode === "chart") {
+    nextTick(() => renderChart(index));
+  }
+}
+
+function setVizMode(index: number, mode: "table" | "chart") {
+  const msg = messages.value[index];
+  if (!msg) return;
+  msg.vizMode = mode;
+  if (mode === "chart") {
+    nextTick(() => renderChart(index));
+  }
+}
+
+function setCanvasRef(el: any, index: number) {
+  if (el) chartRefs.value[index] = el;
+}
+
+function renderChart(index: number) {
+  const msg = messages.value[index];
+  if (!msg || !msg.data || !msg.activeTab) return;
+
+  const canvas = chartRefs.value[index];
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  // 기존 차트 파괴
+  if (msg.chartInstance) {
+    msg.chartInstance.destroy();
+  }
+
+  // 데이터 가져오기
+  const rawData = msg.data[msg.activeTab];
+  const list = getList(rawData);
+
+  // 차트 데이터 가공
+  let type: any = "bar";
+  let labels: string[] = [];
+  let data: number[] = [];
+  let label = msg.activeTab;
+  const colors = ["#4285f4", "#34a853", "#fbbc05", "#ea4335"];
+
+  if (msg.activeTab === "BOT_STATUS") {
+    type = "doughnut";
+    const connected = list.filter((i: any) => i.status === "CONNECTED").length;
+    const disconnected = list.filter(
+      (i: any) => i.status === "DISCONNECTED"
+    ).length;
+    labels = ["Connected", "Disconnected"];
+    data = [connected, disconnected];
+  } else {
+    // 일반 리스트: 이름이나 ID를 라벨로 사용
+    const labelKey =
+      Object.keys(list[0] || {}).find(
+        (k) => k.toLowerCase().includes("name") || k.includes("Id")
+      ) || "id";
+    labels = list.map((i: any) => String(i[labelKey] || "Item"));
+    data = list.map(() => 1);
+  }
+
+  msg.chartInstance = new Chart(ctx, {
+    type: type,
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: label,
+          data: data,
+          backgroundColor: type === "doughnut" ? colors : "#4285f4",
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: type === "doughnut" },
+      },
+    },
+  });
 }
 
 // === 유틸리티 ===
@@ -227,23 +330,51 @@ function scrollToBottom() {
 }
 
 function formatMessage(text: string) {
-  return text ? text.replace(/\n/g, "<br>") : "";
+  if (!text) return "";
+  // 마크다운 스타일 줄바꿈 및 볼드 처리
+  return text
+    .replace(/\n/g, "<br>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 }
 
-function formatHeader(key: string | number | symbol) {
-  return String(key)
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (str) => str.toUpperCase());
+function formatHeader(key: string) {
+  const map: Record<string, string> = {
+    BOT_STATUS: "🤖 봇 상태",
+    BOT_HISTORY: "📜 실행 이력",
+    ERROR_LOG: "🚨 에러 로그",
+    LICENSE_INFO: "💳 라이선스",
+    KNOWLEDGE_BASE: "📚 문서 검색",
+  };
+  return map[key] || key;
+}
+
+function getList(data: any): any[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === "object" && data.products) return data.products; // 라이선스 대응
+  if (typeof data === "object" && data.list) return data.list;
+  return [data];
+}
+
+function getKeys(data: any): string[] {
+  const list = getList(data);
+  if (list.length === 0) return [];
+  return Object.keys(list[0]).filter((k) => k !== "licenseFeatures");
 }
 
 function formatValue(val: any) {
-  if (typeof val === "object" && val !== null) return JSON.stringify(val);
+  if (typeof val === "object" && val !== null) return "[Object]";
   return val;
 }
+
+onUnmounted(() => {
+  messages.value.forEach((m) => {
+    if (m.chartInstance) m.chartInstance.destroy();
+  });
+});
 </script>
 
 <style scoped>
-/* 폰트: Pretendard 권장 */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
 
 .gemini-layout {
@@ -251,35 +382,31 @@ function formatValue(val: any) {
   flex-direction: column;
   height: calc(100vh - 60px);
   background-color: #ffffff;
-  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
-    Roboto, sans-serif;
+  font-family: "Pretendard", sans-serif;
   color: #1f1f1f;
 }
 
-/* === 헤더 === */
+/* 헤더 */
 .top-header {
   text-align: center;
   padding: 16px 0;
   flex-shrink: 0;
 }
 .gemini-title {
-  font-size: 1.25rem;
-  font-weight: 500;
-  color: #444;
+  font-size: 1.5rem;
+  font-weight: 600;
   margin: 0;
-  cursor: pointer;
-  display: inline-block;
   background: linear-gradient(90deg, #4285f4, #9b72cb, #d96570);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-/* === 채팅 영역 === */
+/* 채팅 영역 */
 .chat-container {
   flex: 1;
   overflow-y: auto;
   width: 100%;
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 20px;
   display: flex;
@@ -287,13 +414,9 @@ function formatValue(val: any) {
   gap: 24px;
 }
 
-/* 웰컴 스크린 */
 .welcome-screen {
   margin-top: 10vh;
   text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   opacity: 0.8;
 }
 .welcome-logo {
@@ -302,12 +425,15 @@ function formatValue(val: any) {
   animation: float 3s ease-in-out infinite;
 }
 .welcome-text {
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   font-weight: 500;
-  color: #c4c7c5;
+  color: #444;
+  margin-bottom: 10px;
+}
+.sub-text {
+  color: #888;
 }
 
-/* 메시지 로우 */
 .message-row {
   display: flex;
   gap: 16px;
@@ -317,24 +443,18 @@ function formatValue(val: any) {
   justify-content: flex-end;
 }
 
-/* 프로필 아이콘 */
 .profile-area {
   width: 32px;
   flex-shrink: 0;
   display: flex;
   justify-content: center;
 }
-.ai-avatar {
-  width: 28px;
-  height: 28px;
-}
 .sparkle-icon {
   font-size: 1.5rem;
 }
 
-/* 내용 영역 */
 .message-content {
-  max-width: 85%;
+  max-width: 90%;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -348,94 +468,130 @@ function formatValue(val: any) {
 
 /* 말풍선 */
 .bubble {
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1.6;
-  word-break: break-word;
 }
-
-/* User Bubble */
 .user .bubble {
   background-color: #f0f4f9;
   color: #1f1f1f;
-  padding: 10px 18px;
+  padding: 12px 20px;
   border-radius: 20px;
   border-bottom-right-radius: 4px;
 }
-.bubble-image-box {
-  margin-bottom: 8px;
-}
-.bubble-image-box img {
-  max-width: 200px;
-  max-height: 200px;
-  border-radius: 12px;
-  display: block;
-}
-
-/* AI Bubble */
 .ai .bubble {
   background-color: transparent;
   padding: 0;
   color: #1f1f1f;
 }
 
-/* 데이터 카드 */
-.data-card {
-  margin-top: 12px;
-  background: #ffffff;
+/* 데이터 시각화 래퍼 */
+.data-viz-wrapper {
+  margin-top: 16px;
   border: 1px solid #e0e0e0;
   border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-.data-item {
-  border-bottom: 1px solid #f0f0f0;
-  padding: 12px;
-}
-.data-item:last-child {
-  border-bottom: none;
-}
-.data-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.9rem;
-  margin-bottom: 4px;
-}
-.d-key {
-  color: #757575;
-  font-weight: 500;
-}
-.d-val {
-  color: #333;
-  font-weight: 600;
-  text-align: right;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
-/* === 입력 영역 === */
+/* 탭 버튼 */
+.viz-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+.tab-btn {
+  padding: 6px 14px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.tab-btn.active {
+  background: #e8f0fe;
+  color: #1967d2;
+}
+
+/* 뷰 옵션 (표/차트) */
+.view-options {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.view-options button {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.view-options button.active {
+  background: #4285f4;
+  color: white;
+  border-color: #4285f4;
+}
+
+/* 테이블/차트 */
+.table-view {
+  overflow-x: auto;
+  max-height: 300px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+th {
+  background: #f8f9fa;
+  font-weight: 600;
+  padding: 8px;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  border-bottom: 2px solid #eee;
+}
+td {
+  padding: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #444;
+}
+.chart-view {
+  height: 300px;
+}
+
+/* 입력 영역 */
 .input-area-wrapper {
   flex-shrink: 0;
   background-color: #ffffff;
-  padding: 0 20px 20px 20px;
+  padding: 0 20px 30px;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-
 .input-box-container {
   width: 100%;
   max-width: 800px;
   background-color: #f0f4f9;
   border-radius: 28px;
-  padding: 8px 16px;
+  padding: 10px 16px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 12px;
-  transition: background-color 0.2s;
 }
 .input-box-container:focus-within {
   background-color: #e9eef6;
 }
 
-/* 첨부 버튼 */
 .attach-btn {
   width: 32px;
   height: 32px;
@@ -447,60 +603,15 @@ function formatValue(val: any) {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  margin-bottom: 6px;
-  transition: all 0.2s;
-}
-.attach-btn:hover {
-  background: #bbb;
-  color: #fff;
 }
 .plus-icon {
   font-size: 1.2rem;
-  line-height: 1;
   font-weight: 300;
 }
 
-/* 내부 래퍼 */
 .input-inner-wrapper {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 44px;
 }
-
-/* 인라인 프리뷰 */
-.inline-preview {
-  display: inline-block;
-  position: relative;
-  width: fit-content;
-  margin-top: 8px;
-  margin-bottom: 4px;
-}
-.inline-preview img {
-  height: 60px;
-  border-radius: 8px;
-  border: 1px solid #ddd;
-}
-.remove-preview {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 18px;
-  height: 18px;
-  background: #555;
-  color: white;
-  border: none;
-  border-radius: 50%;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 인풋 */
 .gemini-input {
   width: 100%;
   background: transparent;
@@ -508,21 +619,14 @@ function formatValue(val: any) {
   outline: none;
   font-size: 1rem;
   color: #1f1f1f;
-  line-height: 1.5;
-  padding: 10px 0;
-}
-.gemini-input::placeholder {
-  color: #757575;
+  padding: 8px 0;
 }
 
-/* 전송 버튼 */
 .send-btn {
   background: transparent;
   border: none;
   cursor: pointer;
   padding: 8px;
-  margin-bottom: 4px;
-  flex-shrink: 0;
 }
 .send-icon {
   width: 24px;
@@ -541,8 +645,7 @@ function formatValue(val: any) {
 .footer-note {
   font-size: 0.75rem;
   color: #757575;
-  margin-top: 8px;
-  text-align: center;
+  margin-top: 10px;
 }
 
 /* 로딩 애니메이션 */
@@ -564,7 +667,6 @@ function formatValue(val: any) {
 .typing-dot:nth-child(2) {
   animation-delay: -0.16s;
 }
-
 @keyframes bounce {
   0%,
   80%,
@@ -577,24 +679,22 @@ function formatValue(val: any) {
 }
 @keyframes float {
   0% {
-    transform: translateY(0px);
+    transform: translateY(0);
   }
   50% {
     transform: translateY(-10px);
   }
   100% {
-    transform: translateY(0px);
+    transform: translateY(0);
   }
 }
 
+/* 스크롤바 */
 .scroll-bar::-webkit-scrollbar {
   width: 6px;
 }
 .scroll-bar::-webkit-scrollbar-thumb {
   background: #e0e0e0;
   border-radius: 3px;
-}
-.scroll-bar::-webkit-scrollbar-track {
-  background: transparent;
 }
 </style>

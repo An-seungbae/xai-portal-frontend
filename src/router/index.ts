@@ -41,6 +41,9 @@ const routes = [
     component: ErrorAiAnalysis,
     meta: { requiresAuth: true }
   },
+  // ===============================
+  // 🔍 AI 스마트 검색
+  // ===============================
   {
     path: '/ai/search',
     name: 'AiSmartSearch',
@@ -66,7 +69,7 @@ const routes = [
     meta: { requiresAuth: true }
   },  
   // ===============================
-  //  OCR 이미지 분석
+  // 🖼️ OCR 이미지 분석 (경로 통일)
   // ===============================
   {
     path: '/ai/image',
@@ -76,7 +79,7 @@ const routes = [
   },
 
   // ===============================
-  //  분석 이력
+  // 📜 분석 이력
   // ===============================
   {
     path: '/ai/history',
@@ -99,7 +102,7 @@ const router = createRouter({
 })
 
 /**
- *  전역 Router Guard
+ * 🔐 전역 Router Guard
  * [수정] from -> _from 변경으로 미사용 변수 에러 해결
  */
 router.beforeEach((to, _from, next) => {
