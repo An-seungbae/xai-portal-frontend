@@ -19,7 +19,12 @@
       <div class="nav-group-title">AI 서비스</div>
       <router-link to="/ai/predict" class="nav-item" active-class="active">
         <span class="icon">🔮</span>
-        <span class="label">AI 장애 예측</span>
+        <span class="label">AI 장애 예측 분석</span>
+      </router-link>
+
+      <router-link to="/ai/insight" class="nav-item" active-class="active">
+        <span class="icon">💡</span>
+        <span class="label">AI 스마트 인사이트</span>
       </router-link>
 
       <router-link to="/ai/code-review" class="nav-item" active-class="active">
@@ -29,7 +34,7 @@
 
       <router-link to="/ai/image" class="nav-item" active-class="active">
         <span class="icon">🖼️</span>
-        <span class="label">이미지 분석 (OCR)</span>
+        <span class="label">Vision AI 분석</span>
       </router-link>
 
       <router-link to="/ai/search" class="nav-item" active-class="active">
@@ -67,6 +72,13 @@ import { useRouter } from "vue-router";
 import { authStore } from "../../store/auth";
 
 const router = useRouter();
+// const route = useRoute(); // isActive 제거로 인해 불필요해진 useRoute 제거
+
+// [삭제됨] 사용하지 않는 go 함수 제거
+// function go(path: string) { router.push(path); }
+
+// [삭제됨] 사용하지 않는 isActive 함수 제거
+// function isActive(path: string) { ... }
 
 function logout() {
   authStore.clearToken();
@@ -75,6 +87,7 @@ function logout() {
 </script>
 
 <style scoped>
+/* 스타일은 기존과 동일하게 유지 */
 .side-nav {
   width: 260px;
   height: 100vh;
@@ -109,7 +122,6 @@ function logout() {
   overflow-y: auto;
 }
 
-/* 스크롤바 커스텀 */
 .nav-links::-webkit-scrollbar {
   width: 6px;
 }
@@ -193,27 +205,5 @@ function logout() {
 .role {
   font-size: 12px;
   color: #94a3b8;
-}
-
-.nav-footer {
-  padding: 10px 20px 20px;
-  background: #0f172a;
-}
-
-.logout-btn {
-  width: 100%;
-  padding: 10px;
-  background: #ef4444;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 0.2s;
-}
-
-.logout-btn:hover {
-  background: #dc2626;
 }
 </style>

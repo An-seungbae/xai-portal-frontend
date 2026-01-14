@@ -12,6 +12,7 @@ import AiSmartSearch from '../views/AiSmartSearch.vue'
 import AiPredictiveMaintenance from '../views/AiPredictiveMaintenance.vue';
 import AiLearningManage from '../views/AiLearningManage.vue';
 import AiCodeReview from '../views/AiCodeReview.vue';
+import AiSmartInsight from '../views/AiSmartInsight.vue';
 
 const routes = [
   {
@@ -41,9 +42,6 @@ const routes = [
     component: ErrorAiAnalysis,
     meta: { requiresAuth: true }
   },
-  // ===============================
-  // 🔍 AI 스마트 검색
-  // ===============================
   {
     path: '/ai/search',
     name: 'AiSmartSearch',
@@ -54,6 +52,12 @@ const routes = [
     path: '/ai/predict',
     name: 'AiPredictiveMaintenance',
     component: AiPredictiveMaintenance,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/ai/insight',
+    name: 'AiSmartInsight',
+    component: AiSmartInsight,
     meta: { requiresAuth: true }
   },
   {
@@ -68,19 +72,12 @@ const routes = [
     component: AiCodeReview,
     meta: { requiresAuth: true }
   },  
-  // ===============================
-  // 🖼️ OCR 이미지 분석 (경로 통일)
-  // ===============================
   {
     path: '/ai/image',
     name: 'AiImageAnalysis',
     component: AiImageAnalysis,
     meta: { requiresAuth: true }
   },
-
-  // ===============================
-  // 📜 분석 이력
-  // ===============================
   {
     path: '/ai/history',
     name: 'AiHistoryList',
@@ -103,7 +100,6 @@ const router = createRouter({
 
 /**
  * 🔐 전역 Router Guard
- * [수정] from -> _from 변경으로 미사용 변수 에러 해결
  */
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('accessToken')
